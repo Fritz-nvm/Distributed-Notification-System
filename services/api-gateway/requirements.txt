@@ -1,0 +1,8 @@
+-r ../../shared/requirements-base.txt
+
+# API Gateway specific
+fastapi-limiter==0.1.6
+slowapi==0.1.9
+
+# JWT
+pyjwt==2.8.0

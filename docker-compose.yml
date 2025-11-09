@@ -1,0 +1,213 @@
+version: "3.8"
+
+services:
+  # ========================================
+  # Infrastructure Services
+  # ========================================
+
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${USER_DB_USER}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-template:
+    image: postgres:15-alpine
+    container_name: postgres-template
+    environment:
+      POSTGRES_DB: ${TEMPLATE_DB_NAME}
+      POSTGRES_USER: ${TEMPLATE_DB_USER}
+      POSTGRES_PASSWORD: ${TEMPLATE_DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-template-data:/var/lib/postgresql/data
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPLATE_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================
+  # Application Services (FastAPI)
+  # ========================================
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVICE_NAME=api-gateway
+    env_file:
+      - .env
+    volumes:
+      - ./services/api-gateway:/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification-network
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVICE_NAME=user-service
+    env_file:
+      - .env
+    volumes:
+      - ./services/user-service:/app
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification-network
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  email-service:
+    build:
+      context: ./services/email-service
+      dockerfile: Dockerfile
+    container_name: email-service
+    ports:
+      - "8002:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVICE_NAME=email-service
+    env_file:
+      - .env
+    volumes:
+      - ./services/email-service:/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification-network
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  push-service:
+    build:
+      context: ./services/push-service
+      dockerfile: Dockerfile
+    container_name: push-service
+    ports:
+      - "8003:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVICE_NAME=push-service
+    env_file:
+      - .env
+    volumes:
+      - ./services/push-service:/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification-network
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  template-service:
+    build:
+      context: ./services/template-service
+      dockerfile: Dockerfile
+    container_name: template-service
+    ports:
+      - "8004:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVICE_NAME=template-service
+    env_file:
+      - .env
+    volumes:
+      - ./services/template-service:/app
+    depends_on:
+      postgres-template:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification-network
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  notification-network:
+    driver: bridge
+
+volumes:
+  postgres-user-data:
+  postgres-template-data:
+  redis-data:
+  rabbitmq-data:

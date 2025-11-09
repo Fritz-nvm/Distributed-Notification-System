@@ -1,0 +1,15 @@
+
+-r ../../shared/requirements-base.txt
+
+# Email sending
+sendgrid==6.11.0
+python-mailgun==0.1.1
+
+# SMTP
+aiosmtplib==3.0.1
+
+# Template rendering
+jinja2==3.1.2
+
+# HTML parsing
+beautifulsoup4==4.12.2

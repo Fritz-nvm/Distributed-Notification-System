@@ -1,0 +1,12 @@
+-r ../../shared/requirements-base.txt
+
+# Password hashing
+bcrypt==4.1.1
+
+# Email validation
+email-validator==2.1.0
+
+# Database migrations
+alembic==1.12.1
+
+
